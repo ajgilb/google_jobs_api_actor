@@ -66,6 +66,19 @@
       "description": "Whether to deduplicate jobs when pushing to database (based on apply_link)",
       "default": true
     },
+    "useTopCities": {
+      "title": "Use Top US Cities",
+      "type": "boolean",
+      "description": "If true (default), run each query across a built-in list of major US cities unless a custom cities list is provided.",
+      "default": true
+    },
+    "cities": {
+      "title": "Custom Cities",
+      "type": "array",
+      "description": "Optional list of cities to iterate (e.g., ['New York NY','Los Angeles CA']). If provided, overrides top cities.",
+      "editor": "stringList",
+      "default": []
+    },
     "fullTimeOnly": {
       "title": "Full-Time Only",
       "type": "boolean",

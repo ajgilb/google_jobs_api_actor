@@ -24,6 +24,8 @@ This Apify actor uses the SearchAPI.io Google Jobs API to search for job listing
 - `databaseUrl` - URL of the external database
 - `databaseTable` - Name of the database table to insert jobs into
 - `deduplicateJobs` - Whether to check for and skip duplicate jobs when pushing to database
+- `useTopCities` - If true, expands each query across a built-in list of major US cities
+- `cities` - Optional custom list of cities (e.g., ["New York NY", "Los Angeles CA"]). If provided, overrides top cities
 - `fullTimeOnly` - Whether to filter for full-time positions only
 - `excludeFastFood` - Whether to exclude fast food restaurants
 - `excludeRecruiters` - Whether to exclude recruiting agencies
@@ -75,5 +77,28 @@ The actor outputs job listings with the following structure:
    ```
 
 2. Configure the input parameters according to your needs.
+
+   Example to run city-by-city across top US cities:
+
+   ```json
+   {
+     "queries": [
+       "restaurant chef jobs",
+       "restaurant manager jobs"
+     ],
+     "useTopCities": true,
+     "maxPagesPerQuery": 20
+   }
+   ```
+
+   Example to run against a custom set of cities:
+
+   ```json
+   {
+     "queries": ["restaurant chef jobs"],
+     "cities": ["New York NY", "Los Angeles CA", "Chicago IL"],
+     "maxPagesPerQuery": 20
+   }
+   ```
 
 3. Run the actor and retrieve the results from the dataset.

@@ -477,7 +477,11 @@ try {
         excludeRecruiters = true,
         includeWebsiteData = false,
         testMode = false,
-        searchEngine = 'both'
+        searchEngine = 'both',
+
+        // New inputs to support city-by-city searches
+        useTopCities = true,
+        cities = []
     } = input;
 
     // Update the global isTestMode variable
@@ -505,7 +509,11 @@ try {
     console.log(`- Search Engine: ${searchEngine}`);
     console.log(`- Queries: ${queries.join(', ')}`);
     console.log(`- Max pages per query: ${maxPagesPerQuery}`);
-    console.log(`- Location filter: ${location || 'None'}`);
+    // Determine city list to use
+    const locationsToSearch = (Array.isArray(cities) && cities.length > 0)
+        ? cities
+        : (useTopCities ? topCities : (location ? [location] : []));
+    console.log(`- Location filter: ${location || 'None'}${locationsToSearch.length > 0 ? ` (expanded by ${locationsToSearch.length} city/cities)` : ''}`);
 
     console.log(`- Exclude fast food: ${excludeFastFood}`);
     console.log(`- Exclude recruiters: ${excludeRecruiters}`);
@@ -634,45 +642,82 @@ try {
             throw new Error('Failed to fetch existing jobs from database. Cannot continue without this data.');
         }
 
-        // Search for jobs based on selected search engine
+        // Search for jobs based on selected search engine, expanded by city if configured
         let jobs = [];
 
-        if (searchEngine === 'google') {
-            console.log(`Searching for jobs with Google Jobs API: "${query}" (${testMode ? 'test mode - up to 3 pages' : `up to ${pagesToProcess} pages`}) with database optimization`);
-            jobs = await searchAllJobs(query, location, pagesToProcess, existingJobs);
-        } else if (searchEngine === 'bing') {
-            console.log(`Searching for jobs with Bing Search API: "${query}" (${testMode ? 'test mode' : 'full search'}) with database optimization`);
-            // For Bing, we search one query at a time, so pass it as an array
-            const bingResults = testMode ? 20 : 100; // No practical limit, best filtering
-            jobs = await searchAllJobsWithBing([query], location, bingResults, existingJobs);
-        } else if (searchEngine === 'both') {
-            console.log(`Searching for jobs with both Google Jobs API and Bing Search API: "${query}"`);
+        if (locationsToSearch.length > 0) {
+            console.log(`Executing city-by-city search for "${query}" across ${locationsToSearch.length} cities...`);
+            const aggregatedJobs = [];
 
-            // Search with Google Jobs first
-            console.log(`Google search for: "${query}"`);
-            const googleJobs = await searchAllJobs(query, location, pagesToProcess, existingJobs);
-
-            // Search with Bing
-            console.log(`Bing search for: "${query}"`);
-            const bingResults = testMode ? 20 : 100;
-            const bingJobs = await searchAllJobsWithBing([query], location, bingResults, existingJobs);
-
-            // Combine results and deduplicate
-            const combinedJobs = [...googleJobs, ...bingJobs];
-            const jobMap = new Map();
-
-            // Deduplicate by title + company combination
-            for (const job of combinedJobs) {
-                const key = `${job.title.toLowerCase()}|${job.company.toLowerCase()}`;
-                if (!jobMap.has(key)) {
-                    jobMap.set(key, job);
-                } else {
-                    console.info(`Deduplicating job: "${job.title}" at "${job.company}" (found in both Google and Bing)`);
+            for (const city of locationsToSearch) {
+                try {
+                    if (searchEngine === 'google') {
+                        console.log(`Searching (Google) for: "${query}" in "${city}"`);
+                        const cityJobs = await searchAllJobs(query, city, pagesToProcess, existingJobs);
+                        aggregatedJobs.push(...cityJobs);
+                    } else if (searchEngine === 'bing') {
+                        console.log(`Searching (Bing) for: "${query}" in "${city}"`);
+                        const bingResults = testMode ? 20 : 100;
+                        const cityJobs = await searchAllJobsWithBing([query], city, bingResults, existingJobs);
+                        aggregatedJobs.push(...cityJobs);
+                    } else if (searchEngine === 'both') {
+                        console.log(`Searching (Both) for: "${query}" in "${city}"`);
+                        const googleJobs = await searchAllJobs(query, city, pagesToProcess, existingJobs);
+                        const bingResults = testMode ? 20 : 100;
+                        const bingJobs = await searchAllJobsWithBing([query], city, bingResults, existingJobs);
+                        const combined = [...googleJobs, ...bingJobs];
+                        aggregatedJobs.push(...combined);
+                    }
+                } catch (cityErr) {
+                    console.error(`Error searching city "${city}" for query "${query}": ${cityErr.message}`);
                 }
             }
 
+            // Deduplicate across all cities by title+company
+            const jobMap = new Map();
+            for (const job of aggregatedJobs) {
+                const key = `${job.title.toLowerCase()}|${job.company.toLowerCase()}`;
+                if (!jobMap.has(key)) jobMap.set(key, job);
+            }
             jobs = Array.from(jobMap.values());
-            console.log(`Combined search results: ${googleJobs.length} from Google + ${bingJobs.length} from Bing = ${combinedJobs.length} total, ${jobs.length} after deduplication`);
+            console.log(`City-expanded results for "${query}": ${aggregatedJobs.length} raw, ${jobs.length} after de-dup`);
+        } else {
+            if (searchEngine === 'google') {
+                console.log(`Searching for jobs with Google Jobs API: "${query}" (${testMode ? 'test mode - up to 3 pages' : `up to ${pagesToProcess} pages`}) with database optimization`);
+                jobs = await searchAllJobs(query, location, pagesToProcess, existingJobs);
+            } else if (searchEngine === 'bing') {
+                console.log(`Searching for jobs with Bing Search API: "${query}" (${testMode ? 'test mode' : 'full search'}) with database optimization`);
+                const bingResults = testMode ? 20 : 100; // No practical limit, best filtering
+                jobs = await searchAllJobsWithBing([query], location, bingResults, existingJobs);
+            } else if (searchEngine === 'both') {
+                console.log(`Searching for jobs with both Google Jobs API and Bing Search API: "${query}"`);
+
+                // Search with Google Jobs first
+                console.log(`Google search for: "${query}"`);
+                const googleJobs = await searchAllJobs(query, location, pagesToProcess, existingJobs);
+
+                // Search with Bing
+                console.log(`Bing search for: "${query}"`);
+                const bingResults = testMode ? 20 : 100;
+                const bingJobs = await searchAllJobsWithBing([query], location, bingResults, existingJobs);
+
+                // Combine results and deduplicate
+                const combinedJobs = [...googleJobs, ...bingJobs];
+                const jobMap = new Map();
+
+                // Deduplicate by title + company combination
+                for (const job of combinedJobs) {
+                    const key = `${job.title.toLowerCase()}|${job.company.toLowerCase()}`;
+                    if (!jobMap.has(key)) {
+                        jobMap.set(key, job);
+                    } else {
+                        console.info(`Deduplicating job: "${job.title}" at "${job.company}" (found in both Google and Bing)`);
+                    }
+                }
+
+                jobs = Array.from(jobMap.values());
+                console.log(`Combined search results: ${googleJobs.length} from Google + ${bingJobs.length} from Bing = ${combinedJobs.length} total, ${jobs.length} after deduplication`);
+            }
         }
 
         if (jobs.length === 0) {
