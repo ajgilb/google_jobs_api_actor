@@ -64,7 +64,8 @@
         "title": "Database Table",
         "type": "string",
         "description": "Name of the database table to insert jobs into",
-        "default": "jobs"
+        "default": "jobs",
+        "editor": "textfield"
       },
       "deduplicateJobs": {
         "title": "Deduplicate Jobs",
