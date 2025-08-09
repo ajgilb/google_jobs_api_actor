@@ -450,16 +450,16 @@ try {
         'Lexington KY', 'Stockton CA', 'Corpus Christi TX', 'Henderson NV', 'Riverside CA'
     ];
 
-    // Define broad US-wide search terms for better coverage
+    // Define generic search terms; city is applied via the location parameter
     const defaultQueries = [
-        'restaurant management jobs available United States',
-        'hotel management jobs available United States',
-        'hotel chef jobs available United States',
-        'restaurant chef jobs available United States',
-        'restaurant corporate office jobs available United States',
-        'restaurant executive jobs available United States',
-        'restaurant director jobs available United States',
-        'private chef jobs available United States'
+        'restaurant management jobs',
+        'hotel management jobs',
+        'hotel chef jobs',
+        'restaurant chef jobs',
+        'restaurant corporate office jobs',
+        'restaurant executive jobs',
+        'restaurant director jobs',
+        'private chef jobs'
     ];
 
     // Extract input parameters with defaults
@@ -533,8 +533,18 @@ try {
     const queriesToProcess = testMode ? queries.slice(0, 1) : queries;
     console.log(`Processing ${queriesToProcess.length} queries${testMode ? ' (test mode - only first query)' : ''}`);
 
+    // Ensure city is central: strip broad country terms from query text
+    function sanitizeQueryForLocation(originalQuery) {
+        if (!originalQuery || typeof originalQuery !== 'string') return originalQuery;
+        return originalQuery
+            .replace(/\b(united states|usa|u\.s\.a\.|u\.s\.)\b/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
     // Process each query
     for (const query of queriesToProcess) {
+        const baseQuery = sanitizeQueryForLocation(query);
         // In test mode, process enough pages to get our target number of jobs
         // Start with 1 page, but allow up to 3 pages in test mode if needed
         const pagesToProcess = testMode ? 3 : maxPagesPerQuery;
@@ -646,30 +656,30 @@ try {
         let jobs = [];
 
         if (locationsToSearch.length > 0) {
-            console.log(`Executing city-by-city search for "${query}" across ${locationsToSearch.length} cities...`);
+            console.log(`Executing city-by-city search for "${baseQuery}" across ${locationsToSearch.length} cities...`);
             const aggregatedJobs = [];
 
             for (const city of locationsToSearch) {
                 try {
                     if (searchEngine === 'google') {
-                        console.log(`Searching (Google) for: "${query}" in "${city}"`);
-                        const cityJobs = await searchAllJobs(query, city, pagesToProcess, existingJobs);
+                        console.log(`Searching (Google) for: "${baseQuery}" in "${city}"`);
+                        const cityJobs = await searchAllJobs(baseQuery, city, pagesToProcess, existingJobs);
                         aggregatedJobs.push(...cityJobs);
                     } else if (searchEngine === 'bing') {
-                        console.log(`Searching (Bing) for: "${query}" in "${city}"`);
+                        console.log(`Searching (Bing) for: "${baseQuery}" in "${city}"`);
                         const bingResults = testMode ? 20 : 100;
-                        const cityJobs = await searchAllJobsWithBing([query], city, bingResults, existingJobs);
+                        const cityJobs = await searchAllJobsWithBing([baseQuery], city, bingResults, existingJobs);
                         aggregatedJobs.push(...cityJobs);
                     } else if (searchEngine === 'both') {
-                        console.log(`Searching (Both) for: "${query}" in "${city}"`);
-                        const googleJobs = await searchAllJobs(query, city, pagesToProcess, existingJobs);
+                        console.log(`Searching (Both) for: "${baseQuery}" in "${city}"`);
+                        const googleJobs = await searchAllJobs(baseQuery, city, pagesToProcess, existingJobs);
                         const bingResults = testMode ? 20 : 100;
-                        const bingJobs = await searchAllJobsWithBing([query], city, bingResults, existingJobs);
+                        const bingJobs = await searchAllJobsWithBing([baseQuery], city, bingResults, existingJobs);
                         const combined = [...googleJobs, ...bingJobs];
                         aggregatedJobs.push(...combined);
                     }
                 } catch (cityErr) {
-                    console.error(`Error searching city "${city}" for query "${query}": ${cityErr.message}`);
+                    console.error(`Error searching city "${city}" for query "${baseQuery}": ${cityErr.message}`);
                 }
             }
 
@@ -680,26 +690,26 @@ try {
                 if (!jobMap.has(key)) jobMap.set(key, job);
             }
             jobs = Array.from(jobMap.values());
-            console.log(`City-expanded results for "${query}": ${aggregatedJobs.length} raw, ${jobs.length} after de-dup`);
+            console.log(`City-expanded results for "${baseQuery}": ${aggregatedJobs.length} raw, ${jobs.length} after de-dup`);
         } else {
             if (searchEngine === 'google') {
-                console.log(`Searching for jobs with Google Jobs API: "${query}" (${testMode ? 'test mode - up to 3 pages' : `up to ${pagesToProcess} pages`}) with database optimization`);
-                jobs = await searchAllJobs(query, location, pagesToProcess, existingJobs);
+                console.log(`Searching for jobs with Google Jobs API: "${baseQuery}" (${testMode ? 'test mode - up to 3 pages' : `up to ${pagesToProcess} pages`}) with database optimization`);
+                jobs = await searchAllJobs(baseQuery, location, pagesToProcess, existingJobs);
             } else if (searchEngine === 'bing') {
-                console.log(`Searching for jobs with Bing Search API: "${query}" (${testMode ? 'test mode' : 'full search'}) with database optimization`);
+                console.log(`Searching for jobs with Bing Search API: "${baseQuery}" (${testMode ? 'test mode' : 'full search'}) with database optimization`);
                 const bingResults = testMode ? 20 : 100; // No practical limit, best filtering
-                jobs = await searchAllJobsWithBing([query], location, bingResults, existingJobs);
+                jobs = await searchAllJobsWithBing([baseQuery], location, bingResults, existingJobs);
             } else if (searchEngine === 'both') {
-                console.log(`Searching for jobs with both Google Jobs API and Bing Search API: "${query}"`);
+                console.log(`Searching for jobs with both Google Jobs API and Bing Search API: "${baseQuery}"`);
 
                 // Search with Google Jobs first
-                console.log(`Google search for: "${query}"`);
-                const googleJobs = await searchAllJobs(query, location, pagesToProcess, existingJobs);
+                console.log(`Google search for: "${baseQuery}"`);
+                const googleJobs = await searchAllJobs(baseQuery, location, pagesToProcess, existingJobs);
 
                 // Search with Bing
-                console.log(`Bing search for: "${query}"`);
+                console.log(`Bing search for: "${baseQuery}"`);
                 const bingResults = testMode ? 20 : 100;
-                const bingJobs = await searchAllJobsWithBing([query], location, bingResults, existingJobs);
+                const bingJobs = await searchAllJobsWithBing([baseQuery], location, bingResults, existingJobs);
 
                 // Combine results and deduplicate
                 const combinedJobs = [...googleJobs, ...bingJobs];

@@ -30,7 +30,7 @@ async function searchJobs(query, location = '', nextPageToken = null) {
         // Add cache-busting parameter to ensure fresh results
         searchUrl += `&_cacheBust=${Date.now()}`;
 
-        // Add location if provided
+        // Add location if provided — city should be central, so rely on location param not query text
         if (location) {
             searchUrl += `&location=${encodeURIComponent(location)}`;
         }
