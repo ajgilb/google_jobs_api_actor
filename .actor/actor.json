@@ -30,7 +30,8 @@
         "title": "Location",
         "type": "string",
         "description": "Optional location filter (e.g., 'New York')",
-        "default": ""
+        "default": "",
+        "editor": "textfield"
       },
       "maxPagesPerQuery": {
         "title": "Max Pages Per Query",
