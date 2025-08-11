@@ -6,7 +6,17 @@
 
 import { getWebsiteUrlFromSearchAPI, getDomainFromUrl } from './search_api.js';
 import { EXCLUDED_RESTAURANT_CHAINS } from './excluded_chains.js';
-import { isSalaryCompanyName } from './bing_search_api.js';
+import { isSalaryCompanyName, shouldExcludeJobUrl, EXCLUDED_JOB_DOMAINS } from './bing_search_api.js';
+
+// Exclude major job boards to prioritize direct employer postings
+const EXCLUDED_JOB_SOURCES = new Set([
+    'Indeed', 'Glassdoor', 'ZipRecruiter', 'Monster', 'CareerBuilder', 'SimplyHired', 'Snagajob', 'LinkedIn'
+]);
+
+function shouldExcludeHourlyGoogle(job) {
+    const text = `${job.title || ''} ${job.description || ''}`.toLowerCase();
+    return /\b(per\s+hour|hourly|\$\s*\d+\s*\/\s*(hour|hr)|\/hr|\/hour)\b/i.test(text);
+}
 
 /**
  * Searches for job listings using the Google Jobs API
@@ -70,8 +80,52 @@ async function searchJobs(query, location = '', nextPageToken = null) {
             return { jobs: [], hasMore: false };
         }
 
+        // Early URL/source/company filtering to reduce runtime
+        const brandKeywords = new Set([
+            'indeed','glassdoor','ziprecruiter','monster','careerbuilder','simplyhired','snagajob','linkedin'
+        ]);
+        EXCLUDED_JOB_DOMAINS.forEach(d => {
+            const base = d.replace(/^www\./, '').split('.')[0];
+            if (base) brandKeywords.add(base.toLowerCase());
+        });
+
+        const filteredRawJobs = data.jobs.filter(raw => {
+            try {
+                // Exclude hourly roles quickly
+                if (shouldExcludeHourlyGoogle(raw)) return false;
+
+                // Exclude by main apply link domain
+                if (raw.apply_link && shouldExcludeJobUrl(raw.apply_link)) return false;
+
+                // Exclude if all alternate apply links are excluded
+                if (Array.isArray(raw.apply_links) && raw.apply_links.length > 0) {
+                    const allExcluded = raw.apply_links.every(l => shouldExcludeJobUrl(l.link));
+                    if (allExcluded) return false;
+                }
+
+                // Exclude by VIA/Source brand text
+                if (raw.via) {
+                    const viaLower = String(raw.via).toLowerCase();
+                    for (const kw of brandKeywords) {
+                        if (viaLower.includes(kw)) return false;
+                    }
+                }
+
+                // Exclude by explicit company name when present
+                if (raw.company_name) {
+                    const companyCheck = shouldExcludeCompany(raw.company_name);
+                    if (companyCheck.isExcluded) return false;
+                    if (isSalaryCompanyName(raw.company_name)) return false;
+                }
+
+                return true;
+            } catch (e) {
+                return true;
+            }
+        });
+
         // Log the number of jobs found
-        console.info(`Found ${data.jobs.length} job listings for "${query}"`);
+        console.info(`Found ${data.jobs.length} job listings for "${query}" (${filteredRawJobs.length} after early filtering)`);
 
         // Log pagination info for debugging
         if (data.pagination) {
@@ -79,7 +133,7 @@ async function searchJobs(query, location = '', nextPageToken = null) {
         }
 
         // Process the jobs to extract relevant information
-        const processedJobs = data.jobs.map(job => {
+        let processedJobs = filteredRawJobs.map(job => {
             // Extract company name from various sources
             let companyName = job.company_name;
 
@@ -121,6 +175,10 @@ async function searchJobs(query, location = '', nextPageToken = null) {
                 source: job.via ? job.via.replace('via ', '') : 'Unknown Source'
             };
         });
+
+        // Filter out hourly jobs and major job boards to reduce noise and runtime
+        processedJobs = processedJobs.filter(j => !shouldExcludeHourlyGoogle(j));
+        processedJobs = processedJobs.filter(j => !EXCLUDED_JOB_SOURCES.has((j.source || '').trim()))
 
         return {
             jobs: processedJobs,
