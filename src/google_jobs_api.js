@@ -6,12 +6,26 @@
 
 import { getWebsiteUrlFromSearchAPI, getDomainFromUrl } from './search_api.js';
 import { EXCLUDED_RESTAURANT_CHAINS } from './excluded_chains.js';
-import { isSalaryCompanyName, shouldExcludeJobUrl, EXCLUDED_JOB_DOMAINS } from './bing_search_api.js';
+import { isSalaryCompanyName } from './bing_search_api.js';
 
-// Exclude major job boards to prioritize direct employer postings
-const EXCLUDED_JOB_SOURCES = new Set([
-    'Indeed', 'Glassdoor', 'ZipRecruiter', 'Monster', 'CareerBuilder', 'SimplyHired', 'Snagajob', 'LinkedIn'
-]);
+// Identify recruiter/staffing firms by company name patterns
+function isRecruiterCompanyName(name) {
+    if (!name) return false;
+    const lower = name.toLowerCase();
+    const patterns = [
+        'recruit',
+        'recruiter',
+        'recruitment',
+        'staffing',
+        'headhunt',
+        'headhunter',
+        'talent acquisition',
+        'executive search',
+        'search firm',
+        'placement'
+    ];
+    return patterns.some(p => lower.includes(p));
+}
 
 function shouldExcludeHourlyGoogle(job) {
     const text = `${job.title || ''} ${job.description || ''}`.toLowerCase();
@@ -80,41 +94,15 @@ async function searchJobs(query, location = '', nextPageToken = null) {
             return { jobs: [], hasMore: false };
         }
 
-        // Early URL/source/company filtering to reduce runtime
-        const brandKeywords = new Set([
-            'indeed','glassdoor','ziprecruiter','monster','careerbuilder','simplyhired','snagajob','linkedin'
-        ]);
-        EXCLUDED_JOB_DOMAINS.forEach(d => {
-            const base = d.replace(/^www\./, '').split('.')[0];
-            if (base) brandKeywords.add(base.toLowerCase());
-        });
-
+        // Early filtering to reduce runtime: drop hourly roles and recruiter/staffing posters
         const filteredRawJobs = data.jobs.filter(raw => {
             try {
                 // Exclude hourly roles quickly
                 if (shouldExcludeHourlyGoogle(raw)) return false;
 
-                // Exclude by main apply link domain
-                if (raw.apply_link && shouldExcludeJobUrl(raw.apply_link)) return false;
-
-                // Exclude if all alternate apply links are excluded
-                if (Array.isArray(raw.apply_links) && raw.apply_links.length > 0) {
-                    const allExcluded = raw.apply_links.every(l => shouldExcludeJobUrl(l.link));
-                    if (allExcluded) return false;
-                }
-
-                // Exclude by VIA/Source brand text
-                if (raw.via) {
-                    const viaLower = String(raw.via).toLowerCase();
-                    for (const kw of brandKeywords) {
-                        if (viaLower.includes(kw)) return false;
-                    }
-                }
-
-                // Exclude by explicit company name when present
+                // Exclude by explicit company name when present (recruiters, salary-words, chains, etc.)
                 if (raw.company_name) {
-                    const companyCheck = shouldExcludeCompany(raw.company_name);
-                    if (companyCheck.isExcluded) return false;
+                    if (isRecruiterCompanyName(raw.company_name)) return false;
                     if (isSalaryCompanyName(raw.company_name)) return false;
                 }
 
@@ -176,9 +164,9 @@ async function searchJobs(query, location = '', nextPageToken = null) {
             };
         });
 
-        // Filter out hourly jobs and major job boards to reduce noise and runtime
+        // Filter out hourly jobs and recruiter/staffing companies to reduce noise and runtime
         processedJobs = processedJobs.filter(j => !shouldExcludeHourlyGoogle(j));
-        processedJobs = processedJobs.filter(j => !EXCLUDED_JOB_SOURCES.has((j.source || '').trim()))
+        processedJobs = processedJobs.filter(j => !isRecruiterCompanyName(j.company));
 
         return {
             jobs: processedJobs,
