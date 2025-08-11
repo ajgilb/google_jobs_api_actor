@@ -25,9 +25,6 @@ const EXCLUDED_JOB_DOMAINS = [
     'mcdonalds.com'
 ];
 
-// Export the domain list for reuse in Google pipeline early-filtering
-export { EXCLUDED_JOB_DOMAINS };
-
 /**
  * List of company names to exclude from job search results
  * These are job boards, recruiting companies, and aggregators that appear as company names
